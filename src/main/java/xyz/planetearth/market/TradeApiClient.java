@@ -4,11 +4,15 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import net.fabricmc.loader.api.FabricLoader;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -24,9 +28,17 @@ public final class TradeApiClient {
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final String endpoint;
     private volatile String accessToken;
+    private volatile String minecraftUuid;
 
     public TradeApiClient(String endpoint) {
         this.endpoint = endpoint;
+    }
+
+    /** Restores the capability token for this Minecraft profile only. */
+    public void setMinecraftIdentity(String uuid) {
+        if (uuid == null || uuid.isBlank() || uuid.equals(minecraftUuid)) return;
+        minecraftUuid = uuid;
+        accessToken = readToken(uuid);
     }
 
     public CompletableFuture<List<TradeListing>> loadListings() {
@@ -73,7 +85,10 @@ public final class TradeApiClient {
         body.addProperty("token", link.token());
         return post(body).thenApply(result -> {
             boolean linked = result.get("linked").getAsBoolean();
-            if (linked) accessToken = result.get("accessToken").getAsString();
+            if (linked) {
+                accessToken = result.get("accessToken").getAsString();
+                writeToken(minecraftUuid, accessToken);
+            }
             return linked;
         });
     }
@@ -93,7 +108,36 @@ public final class TradeApiClient {
         body.addProperty("quantity", quantity);
         body.addProperty("unitPrice", unitPrice);
         body.addProperty("note", note);
-        return post(body).thenApply(result -> null);
+        return post(body).thenApply(result -> (Void) null).exceptionally(error -> {
+            if (error.getMessage() != null && error.getMessage().contains("mod_login_required")) {
+                clearToken();
+            }
+            throw new RuntimeException(error);
+        });
+    }
+
+    private Path tokenPath(String uuid) {
+        return FabricLoader.getInstance().getConfigDir().resolve("planetearth-market-" + uuid + ".token");
+    }
+
+    private String readToken(String uuid) {
+        try {
+            Path path = tokenPath(uuid);
+            return Files.exists(path) ? Files.readString(path, StandardCharsets.UTF_8).trim() : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private void writeToken(String uuid, String token) {
+        if (uuid == null || token == null || token.isBlank()) return;
+        try { Files.writeString(tokenPath(uuid), token, StandardCharsets.UTF_8); } catch (Exception ignored) { }
+    }
+
+    private void clearToken() {
+        accessToken = null;
+        if (minecraftUuid == null) return;
+        try { Files.deleteIfExists(tokenPath(minecraftUuid)); } catch (Exception ignored) { }
     }
 
     private CompletableFuture<JsonObject> post(JsonObject body) {

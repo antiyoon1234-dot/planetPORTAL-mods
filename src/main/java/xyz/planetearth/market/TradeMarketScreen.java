@@ -23,6 +23,9 @@ public final class TradeMarketScreen extends Screen {
 
     @Override
     protected void init() {
+        if (client != null && client.player != null) {
+            api.setMinecraftIdentity(client.player.getUuidAsString());
+        }
         search = new TextFieldWidget(textRenderer, width / 2 - 150, 38, 300, 20, Text.literal("아이템 검색"));
         search.setPlaceholder(Text.literal("금, 금괴, 금 블럭 등"));
         addDrawableChild(search);

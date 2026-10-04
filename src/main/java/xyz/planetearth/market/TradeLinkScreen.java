@@ -30,6 +30,7 @@ public final class TradeLinkScreen extends Screen {
                 .dimensions(width / 2 - 80, 165, 160, 20).build());
         MinecraftClient minecraft = client;
         if (minecraft != null && minecraft.player != null) {
+            api.setMinecraftIdentity(minecraft.player.getUuidAsString());
             api.startLink(minecraft.player.getUuidAsString(), minecraft.player.getName().getString()).thenAccept(session -> minecraft.execute(() -> {
                 link = session;
                 status = "코드 " + session.code() + "를 포털에서 Discord 로그인 후 연결하세요.";
